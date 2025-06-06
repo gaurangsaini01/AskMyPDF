@@ -2,16 +2,20 @@ import streamlit as st
 from ingestion import ingest
 from openai import OpenAI
 from langchain_qdrant import QdrantVectorStore
+import re
 from langchain_openai import OpenAIEmbeddings
 from dotenv import load_dotenv
 import json
 import os
 
+
 # Load OpenAI API Key
 load_dotenv()
 client = OpenAI()
 
-st.title("📄 PDF RAG-based QnA")
+st.markdown(" <h1 style='color:#803df5;'>📑 AskMyPDF</h1> ", unsafe_allow_html=True)
+st.markdown("<h3>PDF-based RAG Chatbot</h3>", unsafe_allow_html=True)
+
 
 # Step 1: Upload PDF
 uploaded = st.file_uploader(
@@ -20,26 +24,32 @@ uploaded = st.file_uploader(
     help="Upload your PDF to begin QnA.",
     accept_multiple_files=False
 )
-
 # Step 2: Ingest on upload
 if uploaded is not None and "ingested" not in st.session_state:
     with st.spinner("📄 Loading and processing your PDF..."):
-        ingest(uploaded)
+        clean_name = re.sub(r'\W+', '_', uploaded.name.split('.')[0])
+        collection_name = f"{clean_name}_{uploaded.size}"
+        
+        # Store collection name in session
+        st.session_state.collection_name = collection_name
+        
+        ingest(uploaded, collection_name)
         st.session_state.ingested = True
     st.success("✅ PDF processed! Now you can chat.")
+    # st.write("Please reload before inserting a new PDF 😃")
 
 # Step 3: Chat input
 if st.session_state.get("ingested"):
     query = st.chat_input("Ask your question...")
-
     if query:
+        st.chat_message("user").write(query)
         embeddings = OpenAIEmbeddings(model="text-embedding-3-large")
-
         # Connect to Qdrant
         vector_db = QdrantVectorStore.from_existing_collection(
-            url="http://localhost:6333",
-            collection_name="self_prac",
-            embedding=embeddings
+            collection_name=st.session_state.collection_name,
+            embedding=embeddings,
+            url=os.getenv("QDRANT_URL"),
+            api_key=os.getenv("QDRANT_API_KEY")
         )
 
         # Search top results
@@ -50,7 +60,7 @@ if st.session_state.get("ingested"):
         for result in results:
             context.append({
                 "page_content": result.page_content,
-                "page_number": result.metadata.get('page_number', '?')
+                "page_number": result.metadata.get('page_number')
             })
 
         stringified_context = json.dumps(context)
@@ -63,7 +73,7 @@ if st.session_state.get("ingested"):
         Context:
         {stringified_context}
         """
-
+        
         # Get response
         response = client.chat.completions.create(
             model="gpt-4o",

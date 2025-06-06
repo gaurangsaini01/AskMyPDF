@@ -4,12 +4,24 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 from langchain_openai import OpenAIEmbeddings
 from langchain_qdrant import QdrantVectorStore
+# from qdrant_client import QdrantClient
 from dotenv import load_dotenv
+import os
+import io
+
 load_dotenv()
-def ingest(uploaded):
-    reader = PdfReader(uploaded)
-    # print(reader.pages[10].extract_text())
-    full_text = ""
+
+#this was the main error causing code , QdrantVectorStore internally itself creates a QdrantClient , so instead of passing client again to it simply pass url and apikey directly to QdrantVectorStore. Same thing in main.py
+
+# cloud_client = QdrantClient(
+#     url=os.getenv("QDRANT_URL"),
+#     api_key=os.getenv("QDRANT_API_KEY")
+# )
+
+def ingest(uploaded,collection_name):
+    pdf_bytes = uploaded.read()
+    pdf_buffer = io.BytesIO(pdf_bytes)
+    reader = PdfReader(pdf_buffer)
     pages = reader.pages
 
     docs = []
@@ -38,8 +50,8 @@ def ingest(uploaded):
 
     vector_store = QdrantVectorStore.from_documents(
         documents=split_docs,
-        url="http://localhost:6333",
-        collection_name="self_prac",
-        embedding=embeddings
+        collection_name=collection_name,
+        embedding=embeddings,
+        url=os.getenv("QDRANT_URL"),
+        api_key=os.getenv("QDRANT_API_KEY")
     )
-    print("INGESTION DONE...")
